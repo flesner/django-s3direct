@@ -73,7 +73,7 @@ def get_upload_params(request):
 
     upload_data = {
         'object_key':
-        get_key(key, file_name, dest),
+        get_key(key, file_name, dest, request),
         'access_key_id':
         aws_credentials.access_key,
         'session_token':
