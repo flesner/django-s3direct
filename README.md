@@ -1,98 +1,87 @@
 django-s3direct
 ===============
 
-Upload files directly to S3 from Django
+Directly upload files to S3 compatible services with Django.
 -------------------------------------
 
 [![Build Status](https://travis-ci.org/bradleyg/django-s3direct.svg?branch=master)](https://travis-ci.org/bradleyg/django-s3direct)
-
-Add direct uploads to AWS S3 functionality with a progress bar to file input fields.
-
-<img src="https://raw.githubusercontent.com/bradleyg/django-s3direct/master/screenshot.png" width="381"/>
+  
+<img src="https://raw.githubusercontent.com/bradleyg/django-s3direct/master/screenshot.png" width="100%"/>
 
 ## Installation
 
-Install with Pip:
-
+Install with Pip:  
 ```pip install django-s3direct```
 
-### Backwards-Compatiblity
+## Access setup
 
-With 1.0.0 supporting multipart-upload, most of the internals have been
-changed, a new endpoint has been added, and support has been dropped for
-old style positional settings. There are also new requirements to allow
-`GET` and `HEAD` cross-origin requests to S3, as well as
-the `ETAG` header. Django compatibility has been raised to `>=1.8`.
+### When setting up access credentials you have two options:
 
-If you used any of these features or relied on the previous behaviour,
-it's recommended that you pin `django-s3direct` to `<1.0` until you
-can test the new version in your project:
-
-```sh
-pip install 'django-s3direct <1.0'
-```
-
-
-## AWS Setup
-
-### Access Credentials
-
-You have two options of providing access to AWS resources:
-
-1. Add credentials of an IAM user to your Django settings (see below)
-2. Use the EC2 instance profile and its attached IAM role
-
-Whether you are using an IAM user or a role, there needs to be an IAM policy
-in effect that grants permission to upload to S3:
+### Option 1:
+__Generate access credentials and add them directly to your Django settings__.
+If using Amazon S3 you'll also need to create an IAM policy which grants
+permission to upload to your bucket for your newly created credentials.
 
 ```json
-"Statement": [
-  {
-    "Effect": "Allow",
-    "Action": [
-      "s3:GetObject",
-      "s3:PutObject",
-      "s3:PutObjectAcl",
-      "s3:ListMultipartUploadParts",
-      "s3:AbortMultipartUpload"
-    ],
-    "Resource": "arn:aws:s3:::your-bucket-name/*"
-  }
-]
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:PutObjectAcl",
+        "s3:ListMultipartUploadParts",
+        "s3:AbortMultipartUpload"
+      ],
+      "Resource": "arn:aws:s3:::YOUR_BUCKET_NAME/*"
+    }
+  ]
+}
 ```
 
-If the instance profile is to be used, the IAM role needs to have a
-Trust Relationship configuration applied:
+### Option 2:
+__Use the EC2 instance profile and its attached IAM role (AWS only)__  
+Ensure the following trust policy is in place in addition to the policy 
+above. You'll also need the
+[boto3](https://github.com/boto/boto3) package installed.
 
 ```json
-"Statement": [
-	{
-		"Effect": "Allow",
-		"Principal": {
-			"Service": "ec2.amazonaws.com"
-		},
-		"Action": "sts:AssumeRole"
-	}
-]
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
 ```
 
-Note that in order to use the EC2 instance profile, django-s3direct needs
-to query the EC2 instance metadata using utility functions from the
-[botocore] [] package. You already have `botocore` installed if `boto3`
-is a dependency of your project.
+### CORS setup
 
-### S3 CORS
+Add a CORS policy to your bucket. Note the ETag header is
+important as it is used for multipart uploads. For more information see
+[here](https://github.com/TTLabs/EvaporateJS/wiki/Configuring-The-AWS-S3-Bucket).
 
-Setup a CORS policy on your S3 bucket.
+If using Digital Ocean Spaces you must upload the CORS config via the API/s3cmd
+CLI (as you can't add the ```ExposeHeader``` rule). See
+[here](https://www.digitalocean.com/community/questions/why-can-i-use-http-localhost-port-with-cors-in-spaces)
+for more details.
 
 ```xml
 <CORSConfiguration>
     <CORSRule>
-        <AllowedOrigin>http://yourdomain.com:8080</AllowedOrigin>
+        <AllowedOrigin>http://YOURDOMAIN.COM:8080</AllowedOrigin>
         <AllowedMethod>GET</AllowedMethod>
         <AllowedMethod>HEAD</AllowedMethod>
         <AllowedMethod>PUT</AllowedMethod>
         <AllowedMethod>POST</AllowedMethod>
+        <AllowedMethod>DELETE</AllowedMethod>
         <MaxAgeSeconds>3000</MaxAgeSeconds>
         <ExposeHeader>ETag</ExposeHeader>
         <AllowedHeader>*</AllowedHeader>
@@ -119,51 +108,76 @@ TEMPLATES = [{
 
 # AWS
 
-# If these are not defined, the EC2 instance profile and IAM role are used.
-# This requires you to add boto3 (or botocore, which is a dependency of boto3)
-# to your project dependencies.
-AWS_ACCESS_KEY_ID = ''
-AWS_SECRET_ACCESS_KEY = ''
+# If these are set to None, the EC2 instance profile and IAM role are used.
+AWS_ACCESS_KEY_ID = 'your-aws-access-key-id'
+AWS_SECRET_ACCESS_KEY = 'your-aws-secret-access-key'
 
-AWS_STORAGE_BUCKET_NAME = ''
+# Bucket name
+AWS_STORAGE_BUCKET_NAME = 'your-aws-s3-bucket-name'
 
 # The region of your bucket, more info:
 # http://docs.aws.amazon.com/general/latest/gr/rande.html#s3_region
-S3DIRECT_REGION = 'us-east-1'
+AWS_S3_REGION_NAME = 'eu-west-1'
 
-# Destinations, with the following keys:
-#
-# key [required] Where to upload the file to, can be either:
-#     1. '/' = Upload to root with the original filename.
-#     2. 'some/path' = Upload to some/path with the original filename.
-#     3. functionName = Pass a function and create your own path/filename.
-# key_args [optional] Arguments to be passed to 'key' if it's a function.
-# auth [optional] An ACL function to whether the current Django user can perform this action.
-# allowed [optional] List of allowed MIME types.
-# acl [optional] Give the object another ACL rather than 'public-read'.
-# cache_control [optional] Cache control headers, eg 'max-age=2592000'.
-# content_disposition [optional] Useful for sending files as attachments.
-# bucket [optional] Specify a different bucket for this particular object.
-# server_side_encryption [optional] Encryption headers for buckets that require it.
+# The endpoint of your bucket, more info:
+# http://docs.aws.amazon.com/general/latest/gr/rande.html#s3_region
+AWS_S3_ENDPOINT_URL = 'https://s3-eu-west-1.amazonaws.com'
 
 S3DIRECT_DESTINATIONS = {
     'example_destination': {
-        # REQUIRED
+        # "key" [required] The location to upload file
+        #       1. String: folder path to upload to
+        #       2. Function: generate folder path + filename using a function  
         'key': 'uploads/images',
 
-        # OPTIONAL
-        'auth': lambda u: u.is_staff, # Default allow anybody to upload
-        'allowed': ['image/jpeg', 'image/png', 'video/mp4'],  # Default allow all mime types
-        'bucket': 'pdf-bucket', # Default is 'AWS_STORAGE_BUCKET_NAME'
-        'acl': 'private', # Defaults to 'public-read'
-        'cache_control': 'max-age=2592000', # Default no cache-control
-        'content_disposition': 'attachment',  # Default no content disposition
-        'content_length_range': (5000, 20000000), # Default allow any size
-        'server_side_encryption': 'AES256', # Default no encryption
+        # "auth" [optional] Limit to specfic Django users
+        #        Function: ACL function
+        'auth': lambda u: u.is_staff,
+
+        # "allowed" [optional] Limit to specific mime types
+        #           List: list of mime types
+        'allowed': ['image/jpeg', 'image/png', 'video/mp4'],
+
+        # "bucket" [optional] Bucket if different from AWS_STORAGE_BUCKET_NAME
+        #          String: bucket name
+        'bucket': 'custom-bucket',
+
+        # "endpoint" [optional] Endpoint if different from AWS_S3_ENDPOINT_URL
+        #            String: endpoint URL
+        'endpoint': 'custom-endpoint',
+
+        # "region" [optional] Region if different from AWS_S3_REGION_NAME
+        #          String: region name
+        'region': 'custom-region', # Default is 'AWS_S3_REGION_NAME'
+
+        # "acl" [optional] Custom ACL for object, default is 'public-read'
+        #       String: ACL
+        'acl': 'private',
+
+        # "cache_control" [optional] Custom cache control header
+        #                 String: header
+        'cache_control': 'max-age=2592000',
+
+        # "content_disposition" [optional] Custom content disposition header
+        #                       String: header
+        'content_disposition': lambda x: 'attachment; filename="{}"'.format(x),
+
+        # "content_length_range" [optional] Limit file size
+        #                        Tuple: (from, to) in bytes
+        'content_length_range': (5000, 20000000),
+
+        # "server_side_encryption" [optional] Use serverside encryption
+        #                          String: encrytion standard
+        'server_side_encryption': 'AES256',
+
+        # "allow_existence_optimization" [optional] Checks to see if file already exists,
+        #                                returns the URL to the object if so (no upload)
+        #                                Boolean: True, False
+        'allow_existence_optimization': False,
     },
-    'example_other': {
+    'example_destination_two': {
         'key': lambda filename, args: args + '/' + filename,
-    	'key_args': 'uploads/images',  # Only if 'key' is a function
+    	'key_args': 'uploads/images',
     }
 }
 ```
@@ -172,7 +186,9 @@ S3DIRECT_DESTINATIONS = {
 
 ```python
 urlpatterns = [
+    ...
     url(r'^s3direct/', include('s3direct.urls')),
+    ...
 ]
 ```
 
@@ -243,17 +259,60 @@ $ cd django-s3direct
 $ python setup.py install
 $ cd example
 
-# Add your AWS keys to your environment
+# Add config to your environment
 export AWS_ACCESS_KEY_ID='…'
 export AWS_SECRET_ACCESS_KEY='…'
 export AWS_STORAGE_BUCKET_NAME='…'
-export S3DIRECT_REGION='…'    # e.g. 'eu-west-1'
+export AWS_S3_REGION_NAME='…'
+export AWS_S3_ENDPOINT_URL='…'
 
 $ python manage.py migrate
 $ python manage.py createsuperuser
-$ python manage.py runserver 0.0.0.0:5000
+$ python manage.py runserver
 ```
 
-Visit ```http://localhost:5000/admin``` to view the admin widget and ```http://localhost:5000/form``` to view the custom form widget.
+Visit ```http://localhost:8000/admin``` to view the admin widget and
+```http://localhost:8000/form``` to view the custom form widget.
 
-[botocore]: https://github.com/boto/botocore
+## Development
+```shell
+$ git clone git@github.com:bradleyg/django-s3direct.git
+$ cd django-s3direct
+
+# Add your AWS keys/details to .env file and export
+$ cp .env-dist .env
+
+# Build docker image
+$ docker build . --build-arg SKIP_TOX=true -t s3direct
+$ docker run -itv $(pwd):/code -p 8000-8001:8000-8001 --env-file .env s3direct bash
+$ npm i
+
+# Install locally
+$ python setup.py develop
+
+# Run examples
+$ python example/manage.py migrate
+$ python example/manage.py createsuperuser
+$ python example/manage.py runserver 0.0.0.0:8000
+
+# Run tox tests
+$ tox
+
+# Run tests
+$ npm run test
+
+# Run frontend bundler and Django server
+$ npm run dev
+
+# Watch and build frontend (dev)
+$ npm run watch
+
+# Build frontend (prod)
+$ npm run build
+
+# Format python // PEP8
+$ npm run yapf
+
+# Upload to PYPI
+$ npm run pypi
+```

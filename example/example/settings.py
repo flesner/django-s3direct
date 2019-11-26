@@ -107,9 +107,9 @@ STATIC_URL = '/static/'
 # django-s3direct will attempt to use the EC2 instance profile instead.
 AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID', '')
 AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY', '')
-
-AWS_STORAGE_BUCKET_NAME = os.environ.get('AWS_STORAGE_BUCKET_NAME', 'test-bucket')
-S3DIRECT_REGION = os.environ.get('S3DIRECT_REGION', 'us-east-1')
+AWS_STORAGE_BUCKET_NAME = os.environ.get('AWS_STORAGE_BUCKET_NAME', '')
+AWS_S3_ENDPOINT_URL = os.environ.get('AWS_S3_ENDPOINT_URL', '')
+AWS_S3_REGION_NAME = os.environ.get('AWS_S3_REGION_NAME', '')
 
 
 def create_filename(filename):
@@ -140,6 +140,7 @@ S3DIRECT_DESTINATIONS = {
             'image/png'
         ],
         'content_length_range': (5000, 20000000),
+        'allow_existence_optimization': True
     },
 
     # Allow authenticated users to upload mp4's

@@ -1,27 +1,34 @@
 import hashlib
 import hmac
+from collections import namedtuple
 
 from django.conf import settings
 
+# django-s3direct accesses AWS credentials from Django config and provides
+# an optional ability to retrieve credentials from EC2 instance profile if
+# AWS settings are set to None. This optional ability requires botocore,
+# however dependency on botocore is not enforced as this a secondary
+# method for retrieving credentials.
+try:
+    from botocore import session
+except ImportError:
+    session = None
 
-def get_at(index, t):
-    try:
-        value = t[index]
-    except IndexError:
-        value = None
-    return value
+AWSCredentials = namedtuple('AWSCredentials',
+                            ['token', 'secret_key', 'access_key'])
 
 
 def get_s3direct_destinations():
     """Returns s3direct destinations.
 
-    NOTE: Don't use constant as it will break ability to change at runtime (e.g. tests)
+    NOTE: Don't use constant as it will break ability to change at runtime.
     """
     return getattr(settings, 'S3DIRECT_DESTINATIONS', None)
 
 
 # AWS Signature v4 Key derivation functions. See:
 # http://docs.aws.amazon.com/general/latest/gr/signature-v4-examples.html#signature-v4-examples-python
+
 
 def sign(key, message):
     return hmac.new(key, message.encode("utf-8"), hashlib.sha256).digest()
@@ -42,7 +49,10 @@ def get_aws_v4_signature(key, message):
 
 def get_key(key, file_name, dest, request):
     if hasattr(key, '__call__'):
-        fn_args = [file_name, request]
+        fn_args = [
+            file_name,
+            request
+        ]
         args = dest.get('key_args')
         if args:
             fn_args.append(args)
@@ -52,3 +62,22 @@ def get_key(key, file_name, dest, request):
     else:
         object_key = '%s/%s' % (key.strip('/'), file_name)
     return object_key
+
+
+def get_aws_credentials():
+    access_key = getattr(settings, 'AWS_ACCESS_KEY_ID', None)
+    secret_key = getattr(settings, 'AWS_SECRET_ACCESS_KEY', None)
+    if access_key and secret_key:
+        # AWS tokens are not created for pregenerated access keys
+        return AWSCredentials(None, secret_key, access_key)
+
+    if not session:
+        # AWS credentials are not required for publicly-writable buckets
+        return AWSCredentials(None, None, None)
+
+    creds = session.get_session().get_credentials()
+    if creds:
+        return AWSCredentials(creds.token, creds.secret_key, creds.access_key)
+    else:
+        # Creds are incorrect
+        return AWSCredentials(None, None, None)
